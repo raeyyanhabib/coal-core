@@ -1,0 +1,1775 @@
+[org 0x100]
+jmp start
+
+; ===== DATA SECTION =====
+
+; Start Screen Data
+title1      db '====================================', 0
+title2      db '                                    ', 0
+title3      db '       B A L L O O N  P O P         ', 0
+title4      db '                                    ', 0
+title5      db '====================================', 0
+startBtn    db '    START      Press S', 0
+exitBtn     db '    EXIT       Press E', 0
+gameInfo    db 'Pop balloons by typing their letters!', 0
+timeInfo    db 'Time Limit: 2 Minutes', 0
+difficultyMsg db 'Select Difficulty:', 0
+easyBtn       db '    1. EASY', 0
+mediumBtn     db '    2. MEDIUM', 0
+hardBtn       db '    3. HARD', 0
+difficulty    db 1  ; 1=Easy, 2=Medium, 3=Hard
+
+; Pause Screen Data
+pauseBox1 db '====================================', 0
+pauseBox2 db '                                    ', 0
+pauseBox3 db '          P A U S E D               ', 0
+pauseBox4 db '                                    ', 0
+pauseBox5 db '====================================', 0
+continueMsg db 'Press P again to continue', 0
+exitFromPauseMsg db '    EXIT       Press E', 0
+
+; End Game Screen Data
+gameOver1 db '====================================', 0
+gameOver2 db '                                    ', 0
+gameOver3 db '          G A M E  O V E R          ', 0
+gameOver4 db '                                    ', 0
+gameOver5 db '====================================', 0
+thankMsg  db 'Thank You for Playing!', 0
+finalScoreMsg db 'FINAL SCORE: ', 0
+restartBtn db '    RESTART    Press R', 0
+exitBtn2    db '    EXIT       Press E', 0
+timeUpMsg db 'Time is Up!', 0
+escapeMsg db 'A Balloon Escaped!', 0
+
+; Game Screen Data
+scoreLabel db 'SCORE: ', 0
+timeLabel  db 'TIME: ', 0
+pauseMsg   db 'Press ESC to Pause', 0
+topBoundary db '________________________________________________________________________________', 0
+ground1 db '################################################################################', 0
+
+; Balloon Data
+balloon1  db '  @  ', 0
+balloon2  db ' @@@ ', 0
+balloon3  db '@@@@@', 0
+balloon4  db ' @@@ ', 0
+balloon5  db '  @  ', 0
+balloon6  db '  |  ', 0
+
+; Star positions
+starPos   dw 2,15, 2,30, 2,45, 2,60, 2,70
+          dw 3,10, 3,35, 3,50, 3,65
+          dw 4,5, 4,20, 4,40, 4,55, 4,72
+          dw 5,12, 5,28, 5,50, 5,65
+          dw 6,10, 6,35, 6,55, 6,70
+          dw 7,15, 7,30, 7,48, 7,62
+          dw 8,5, 8,38, 8,60, 8,73
+          dw 9,12, 9,52, 9,70
+          dw 20,15, 20,30, 20,65, 20,73
+          dw 21,10, 21,30, 21,50, 21,65
+          dw 22,5, 22,20, 22,35, 22,52, 22,68
+          dw 23,12, 23,28, 23,48, 23,62, 23,75
+starCount dw 51
+frameCount db 0
+
+; Game variables
+score dw 0
+maxBalloons equ 7
+gameOverReason db 0  ; 0=timeup, 1=balloonescaped, 2=userquit
+
+; Timer variables
+totalGameTicks dw 2184    ; 2 minutes roughly
+elapsedTicks dw 0
+startTicks dw 0
+startTicksHi dw 0
+minutes db 2
+seconds db 0
+timeStr db '02:00', 0
+
+; Balloon structure: row(1), col(1), letter(1), color(1), active(1) = 5 bytes each
+balloonData times 35 db 0
+balloonColors db 0x0C, 0x0E, 0x0D, 0x0A, 0x09, 0x04, 0x06
+balloonLetters db 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+spawnCounter db 0
+numBuffer db '0000', 0
+moveCounter dw 0
+spawnDelay dw 50
+moveSpeed dw 15
+
+; --------------------------------------
+
+; Clear screen
+ClrScr:
+    push cx
+    push di
+    push ax
+    push es
+    
+    mov ax, 0xB800
+    mov es, ax
+    mov cx, 2000
+    mov di, 0
+    mov ax, 0x0720
+    
+clearLoop:
+    mov [es:di], ax
+    add di, 2
+    loop clearLoop
+    
+    pop es
+    pop ax
+    pop di
+    pop cx
+    ret
+	
+delayedclr : 
+    push cx
+    push di
+    push ax
+    push es
+    
+    mov ax, 0xB800
+    mov es, ax
+   
+    mov di, 0
+    mov ax, 160
+  
+cleardelay:
+    mov word [es:di], 0x0720
+    add di, 2
+    mov si, 2000
+hello:	
+    dec si
+	jnz hello
+	
+	cmp di, 4000 
+	jne cleardelay
+	
+	
+   
+    
+    pop es
+    pop ax
+    pop di
+    pop cx
+    ret
+; Paint screen with teal/cyan background
+paintBlue:
+    push cx
+    push di
+    push ax
+    push es
+    
+    mov ax, 0xB800
+    mov es, ax
+    mov cx, 2000
+    mov di, 1
+    mov al, 0x30
+    
+paintLoop:
+    mov [es:di], al
+    add di, 2
+    loop paintLoop
+    
+    pop es
+    pop ax
+    pop di
+    pop cx
+    ret
+
+; Play Pop Sound (Beep)
+playPopSound:
+    push ax
+    push cx
+    push dx
+
+    ;  PIT
+    mov al, 10110110b    ; Mode 3, Binary, Channel 2
+    out 0x43, al
+
+    ; Frequency 
+    mov ax, 0x031B       ; ~1500Hz
+    out 0x42, al         ; Low byte
+    mov al, ah
+    out 0x42, al         ; High byte
+
+    ; Step 3: Turn ON speaker
+    in al, 0x61
+    or al, 00000011b
+    out 0x61, al
+
+    ; Delay
+    mov cx, 0x1500       
+soundDelay:
+    loop soundDelay
+
+    ; Turn speaker off
+    in al, 0x61
+    and al, 11111100b
+    out 0x61, al
+
+    pop dx
+    pop cx
+    pop ax
+    ret
+
+; -------------------------------------- print str
+
+printStr:
+    push ax
+    push bx
+    push cx
+    push di
+    push es
+    
+    mov ax, 0xB800
+    mov es, ax
+    
+    mov al, dh
+    mov cl, 80
+    mul cl
+    add al, dl
+    adc ah, 0
+    shl ax, 1
+    mov di, ax
+    
+    mov bh, bl
+    
+printLoop:
+    mov bl, [si]
+    cmp bl, 0
+    je printDone
+    mov [es:di], bl
+    inc di
+    mov [es:di], bh
+    inc di
+    inc si
+    jmp printLoop
+    
+printDone:
+    pop es
+    pop di
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+printChar:
+    push ax
+    push bx
+    push cx
+    push di
+    push es
+    push dx
+
+    mov cl, al
+    mov ax, 0xB800
+    mov es, ax
+
+    mov al, dh
+    mov ch, 80
+    mul ch
+    add al, dl
+    adc ah, 0
+    shl ax, 1
+    mov di, ax
+
+    mov al, cl
+    mov [es:di], al
+    inc di
+    mov [es:di], bl
+
+    pop dx
+    pop es
+    pop di
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+; --------------------------------------
+
+numToStr:
+    push ax
+    push bx
+    push cx
+    push dx
+    push di
+    
+    mov di, numBuffer
+    add di, 3
+    mov cx, 4
+    
+convertLoop:
+    xor dx, dx
+    mov bx, 10
+    div bx
+    add dl, '0'
+    mov [di], dl
+    dec di
+    loop convertLoop
+    
+    pop di
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+; -------------------------------------- Timer logic 
+
+updateTimeStr:
+    push ax
+    push bx
+    push dx
+    push si
+    
+    mov al, [minutes]
+    xor ah, ah
+	
+    mov bl, 10x
+    div bl
+    add al, '0'
+    mov [timeStr], al
+    
+    add ah, '0'
+    mov [timeStr+1], ah
+    
+    mov al, [seconds]
+    xor ah, ah
+    mov bl, 10
+    div bl
+    add al, '0'
+    mov [timeStr+3], al
+    
+    add ah, '0'
+    mov [timeStr+4], ah
+    
+    pop si
+    pop dx
+    pop bx
+    pop ax
+    ret
+
+getElapsedTicks:
+    push cx
+    push dx
+    push bx
+    
+    mov ah, 0
+    int 0x1A
+    
+    sub dx, [startTicks]
+    sbb cx, [startTicksHi]
+    
+    jnc noWrap
+    add dx, 0xFFFF
+    adc cx, 0xFFFF
+noWrap:
+    
+    mov [elapsedTicks], dx
+    
+    pop bx
+    pop dx
+    pop cx
+    ret
+
+updateTimer:
+    push ax
+    push bx
+    push dx
+    
+    call getElapsedTicks
+    
+    mov ax, [elapsedTicks]
+    cmp ax, [totalGameTicks]
+    jae timeIsUp
+    
+    mov ax, [totalGameTicks]
+    sub ax, [elapsedTicks]
+    
+    mov dx, 0
+    mov bx, 18
+    div bx
+    
+    mov bx, 60
+    xor dx, dx
+    div bx
+    
+    mov [minutes], al
+    mov [seconds], dl
+    
+    call updateTimeStr
+    jmp timerDone
+    
+timeIsUp:
+    mov byte [minutes], 0
+    mov byte [seconds], 0
+    call updateTimeStr
+    mov byte [gameOverReason], 0
+    
+    pop dx
+    pop bx
+    pop ax
+    jmp showEndScreen
+    
+timerDone:
+    pop dx
+    pop bx
+    pop ax
+    ret
+
+; -------------------------------------- Balloon logic
+
+
+drawBalloon:
+    push dx
+    push si
+    
+    mov si, balloon1
+    call printStr
+    
+    inc dh
+    pop si
+    push si
+    mov si, balloon2
+    call printStr
+    
+    inc dh
+    pop si
+    push si
+    mov si, balloon3
+    call printStr
+    
+    inc dh
+    pop si
+    push si
+    mov si, balloon4
+    call printStr
+    
+    inc dh
+    pop si
+    push si
+    mov si, balloon5
+    call printStr
+    
+    inc dh
+    pop si
+    push si
+    mov si, balloon6
+    call printStr
+    
+    pop si
+    pop dx
+    ret
+
+drawGameBalloon:
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    
+    mov ch, bl  ; color
+    mov cl, bh  ; letter
+    
+    push dx
+    
+    ; Line 1
+    mov al, ' '
+    mov bl, 0x00
+    call printChar
+    inc dl
+    call printChar
+    inc dl
+    call printChar
+    inc dl
+    mov al, '@'
+    mov bl, ch
+    call printChar
+    inc dl
+    mov al, ' '
+    mov bl, 0x00
+    call printChar
+    inc dl
+    call printChar
+    inc dl
+    call printChar
+    
+    ; Line 2
+    pop dx
+    push dx
+    inc dh
+    mov al, ' '
+    mov bl, 0x00
+    call printChar
+    inc dl
+    call printChar
+    inc dl
+    mov al, '@'
+    mov bl, ch
+    call printChar
+    inc dl
+    mov al, ' '
+    mov bl, 0x00
+    call printChar
+    inc dl
+    mov al, '@'
+    mov bl, ch
+    call printChar
+    inc dl
+    mov al, ' '
+    mov bl, 0x00
+    call printChar
+    inc dl
+    call printChar
+    
+    ; Line 3
+    pop dx
+    push dx
+    add dh, 2
+    mov al, ' '
+    mov bl, 0x00
+    call printChar
+    inc dl
+    mov al, '@'
+    mov bl, ch
+    call printChar
+    inc dl
+    call printChar
+    inc dl
+    call printChar
+    inc dl
+    call printChar
+    inc dl
+    call printChar
+    inc dl
+    mov al, ' '
+    mov bl, 0x00
+    call printChar
+    
+    ; Line 4
+    pop dx
+    push dx
+    add dh, 3
+    mov al, ' '
+    mov bl, 0x00
+    call printChar
+    inc dl
+    call printChar
+    inc dl
+    mov al, '@'
+    mov bl, ch
+    call printChar
+    inc dl
+    call printChar
+    inc dl
+    call printChar
+    inc dl
+    mov al, ' '
+    mov bl, 0x00
+    call printChar
+    inc dl
+    call printChar
+    
+    ; Line 5
+    pop dx
+    push dx
+    add dh, 4
+    mov al, ' '
+    mov bl, 0x00
+    call printChar
+    inc dl
+    call printChar
+    inc dl
+    call printChar
+    inc dl
+    mov al, '@'
+    mov bl, ch
+    call printChar
+    inc dl
+    mov al, ' '
+    mov bl, 0x00
+    call printChar
+    inc dl
+    call printChar
+    inc dl
+    call printChar
+    
+    ; Line 6
+    pop dx
+    push dx
+    add dh, 5
+    mov al, ' '
+    mov bl, 0x00
+    call printChar
+    inc dl
+    call printChar
+    inc dl
+    call printChar
+    inc dl
+    mov al, '|'
+    mov bl, 0x08
+    call printChar
+    inc dl
+    mov al, ' '
+    mov bl, 0x00
+    call printChar
+    inc dl
+    call printChar
+    inc dl
+    call printChar
+    
+    ; Draw letter
+    pop dx
+    push dx
+    add dh, 2
+    add dl, 2
+    
+    mov al, ' '
+    mov bl, 0x00
+    call printChar
+    inc dl
+    mov al, cl
+    mov bl, 0x0B
+    call printChar
+    inc dl
+    mov al, ' '
+    mov bl, 0x00
+    call printChar
+    
+    pop dx
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+eraseBalloon:
+    push ax
+    push bx
+    push cx
+    push dx
+    
+    mov cx, 6
+    mov al, ' '
+    mov bl, 0x00
+    
+eraseLoop:
+    push cx
+    push dx
+    
+    mov cx, 7
+eraseLineLoop:
+    call printChar
+    inc dl
+    loop eraseLineLoop
+    
+    pop dx
+    inc dh
+    pop cx
+    loop eraseLoop
+    
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+; --------------------------------------
+
+drawStars:
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push bp
+
+    mov si, starPos
+    mov cx, [starCount]
+    mov di, 0
+
+starLoop:
+    push cx
+
+    lodsw
+    mov dh, al
+    lodsw
+    mov dl, al
+
+    push si
+    push di
+    call isStarBlocked
+    pop di
+    pop si
+    
+    cmp al, 1
+    je skipThisStar
+    
+    mov al, '*'
+    mov bl, 0x07
+    call printChar
+
+skipThisStar:
+    inc di
+    pop cx
+    dec cx
+    cmp cx, 0
+    je starsDone
+    jmp starLoop
+
+starsDone:
+    pop bp
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+isStarBlocked:
+    push bx
+    push cx
+    push dx
+    push di
+    
+    mov di, balloonData
+    mov cx, maxBalloons
+    
+checkStarLoop:
+    cmp byte [di+4], 0
+    je nextBalloon
+    
+    mov al, [di]
+    mov bl, [di+1]
+    
+    cmp dh, al
+    jb nextBalloon
+    mov ah, al
+    add ah, 5
+    cmp dh, ah
+    ja nextBalloon
+    
+    cmp dl, bl
+    jb nextBalloon
+    mov ah, bl
+    add ah, 4
+    cmp dl, ah
+    ja nextBalloon
+    
+    mov al, 1
+    jmp checkStarDone
+    
+nextBalloon:
+    add di, 5
+    loop checkStarLoop
+    
+    mov al, 0
+    
+checkStarDone:
+    pop di
+    pop dx
+    pop cx
+    pop bx
+    ret
+
+drawGround:
+    push dx
+    push si
+    push bx
+
+    mov dh, 23
+    mov dl, 0
+    mov bl, 0x06
+    mov si, ground1
+    call printStr
+
+    pop bx
+    pop si
+    pop dx
+    ret
+
+redrawGround:
+    push ax
+    push bx
+    push dx
+    push si
+    
+    mov dh, 23
+    mov dl, 0
+    mov bl, 0x06
+    mov si, ground1
+    
+redrawGroundLoop:
+    mov al, [si]
+    cmp al, 0
+    je redrawGroundDone
+    
+    push si
+    call printChar
+    pop si
+    
+    inc si
+    inc dl
+    jmp redrawGroundLoop
+    
+redrawGroundDone:
+    pop si
+    pop dx
+    pop bx
+    pop ax
+    ret
+    
+drawTopBoundary:
+    push dx
+    push si
+    push bx
+
+    mov dh, 1
+    mov dl, 0
+    mov bl, 0x08
+    mov si, topBoundary
+    call printStr
+
+    pop bx
+    pop si
+    pop dx
+    ret 
+
+; --------------------------------------
+
+initBalloons:
+    push ax
+    push cx
+    push di
+    
+    mov di, balloonData
+    mov cx, maxBalloons
+    xor al, al
+    
+initLoop:
+    mov byte [di], 0
+    mov byte [di+1], 0
+    mov byte [di+2], 0
+    mov byte [di+3], 0
+    mov byte [di+4], 0
+    add di, 5
+    loop initLoop
+    
+    mov byte [spawnCounter], 0
+    
+    pop di
+    pop cx
+    pop ax
+    ret
+
+spawnBalloon:
+    push ax
+    push bx
+    push cx
+    push di
+    push si
+    
+    mov di, balloonData
+    mov cx, maxBalloons
+    
+findSlot:
+    cmp byte [di+4], 0
+    je foundSlot
+    add di, 5
+    loop findSlot
+    jmp spawnDone
+    
+foundSlot:
+    mov ah, 0
+    int 0x1A
+    mov ax, dx
+    xor dx, dx
+    mov bx, 64
+    div bx
+    add dl, 5
+    
+    mov byte [di], 22
+    mov [di+1], dl
+    
+    mov ah, 0
+    int 0x1A
+    mov ax, dx
+    xor dx, dx
+    mov bx, 26
+    div bx
+    mov al, dl
+    
+    mov si, balloonLetters
+    xor ah, ah
+    add si, ax
+    mov bl, [si]
+    mov [di+2], bl
+    
+    mov ah, 0
+    int 0x1A
+    mov ax, dx
+    xor dx, dx
+    mov bx, 7
+    div bx
+    
+    mov si, balloonColors
+    mov al, dl
+    xor ah, ah
+    add si, ax
+    mov al, [si]
+    mov [di+3], al
+    
+    mov byte [di+4], 1
+    
+    mov [spawnCounter], al
+    
+spawnDone:
+    pop si
+    pop di
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+updateBalloons:
+    push ax
+    push bx
+    push cx
+    push dx
+    push di
+    
+    mov di, balloonData
+    mov cx, maxBalloons
+    
+updateLoop:
+    cmp byte [di+4], 0
+    je skipBalloon
+    
+    mov al, [di]
+    cmp al, 2
+    jle balloonEscaped
+    
+    push di
+    mov dh, [di]
+    mov dl, [di+1]
+    add dh, 1
+    cmp dh, 23
+    jae skipErase
+    
+    push cx
+    mov cx, 7
+    mov al, ' '
+    mov bl, 0x00
+eraseOldPos:
+    call printChar
+    inc dl
+    loop eraseOldPos
+    pop cx
+    
+skipErase:
+    pop di
+    
+    dec byte [di]
+    
+    mov dh, [di]
+    mov dl, [di+1]
+    mov bl, [di+3]
+    mov bh, [di+2]
+    
+    cmp dh, 2
+    jb skipBalloon
+    cmp dh, 22
+    ja skipBalloon
+    
+    call drawGameBalloon
+    
+ skipBalloon:
+    add di, 5
+    dec cx
+    jnz updateLoop
+    
+    pop di
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret 
+    
+balloonEscaped:
+    mov byte [gameOverReason], 1
+    pop di
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    jmp showEndScreen
+
+checkBalloonPop:
+    push ax
+    push bx
+    push cx
+    push dx
+    push di
+    
+    mov di, balloonData
+    mov cx, maxBalloons
+    
+checkLoop:
+    cmp byte [di+4], 0
+    je skipCheck
+    
+    mov bl, [di+2]
+    cmp al, bl
+    je popThisBalloon
+    
+    cmp al, 'a'
+    jb skipCheck
+    cmp al, 'z'
+    ja skipCheck
+    sub al, 32
+    cmp al, bl
+    je popThisBalloon
+    
+skipCheck:
+    add di, 5
+    dec cx
+    jnz checkLoop
+    jmp checkDone
+    
+popThisBalloon:
+    call playPopSound    ; SOUNDEFFECTTRIGGER 
+
+    mov dh, [di]
+    mov dl, [di+1]
+    
+    push cx
+    push di
+    push dx
+    
+    mov cx, 6
+eraseThisBalloon:
+    push cx
+    push dx
+    mov cx, 7
+    mov al, ' '
+    mov bl, 0x00
+eraseThisRow:
+    call printChar
+    inc dl
+    loop eraseThisRow
+    pop dx
+    inc dh
+    pop cx
+    loop eraseThisBalloon
+    
+    pop dx
+    pop di
+    mov dh, [di]
+    add dh, 6
+    mov dl, [di+1]
+    add dl, 3
+    
+eraseTrail:
+    cmp dh, 23
+    jae trailDone
+    
+    push dx
+    mov al, ' '
+    mov bl, 0x00
+    call printChar
+    pop dx
+    inc dh
+    jmp eraseTrail
+    
+trailDone:
+    pop cx
+    
+    mov byte [di+4], 0
+    
+    call redrawGround
+    call drawStars
+    
+    mov ax, [score]
+    add ax, 10
+    mov [score], ax
+    
+    jmp checkDone
+    
+checkDone:
+    pop di
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+; --------------------------------------
+
+drawScore:
+    push ax
+    push dx
+    push si
+    push bx
+    
+    mov dh, 0
+    mov dl, 2
+    mov si, scoreLabel
+    mov bl, 0x0E
+    call printStr
+    
+    mov ax, [score]
+    call numToStr
+    
+    mov dh, 0
+    mov dl, 9
+    mov si, numBuffer
+    mov bl, 0x0E
+    call printStr
+    
+    pop bx
+    pop si
+    pop dx
+    pop ax
+    ret
+
+drawTime:
+    push dx
+    push si
+    push bx
+    
+    mov dh, 0
+    mov dl, 35
+    mov si, timeLabel
+    mov bl, 0x0B
+    call printStr
+    
+    mov dh, 0
+    mov dl, 41
+    mov si, timeStr
+    mov bl, 0x0B
+    call printStr
+    
+    pop bx
+    pop si
+    pop dx
+    ret
+
+; --------------------------------------
+
+showStartScreen:
+    call ClrScr
+    call paintBlue
+    
+    mov dh, 2
+    mov dl, 5
+    mov bl, 0x3C
+    call drawBalloon
+    
+    mov dh, 3
+    mov dl, 70
+    mov bl, 0x3E
+    call drawBalloon
+    
+    mov dh, 18
+    mov dl, 8
+    mov bl, 0x3D
+    call drawBalloon
+    
+    mov dh, 17
+    mov dl, 68
+    mov bl, 0x3A
+    call drawBalloon
+    
+    mov word [score], 0
+    mov ax, [score]
+    call numToStr
+    
+    mov dh, 1
+    mov dl, 34
+    mov si, scoreLabel
+    mov bl, 0x3F
+    call printStr
+    mov si, numBuffer
+    mov dl, 41
+    call printStr
+    
+    mov dh, 6
+    mov dl, 22
+    mov si, title1
+    mov bl, 0x3E
+    call printStr
+    
+    mov dh, 7
+    mov dl, 22
+    mov si, title2
+    mov bl, 0x3E
+    call printStr
+    
+    mov dh, 8
+    mov dl, 22
+    mov si, title3
+    mov bl, 0x3F
+    call printStr
+    
+    mov dh, 9
+    mov dl, 22
+    mov si, title4
+    mov bl, 0x3E
+    call printStr
+    
+    mov dh, 10
+    mov dl, 22
+    mov si, title5
+    mov bl, 0x3E
+    call printStr
+    
+    mov dh, 12
+    mov dl, 21
+    mov si, gameInfo
+    mov bl, 0x3B
+    call printStr
+    
+    mov dh, 13
+    mov dl, 29
+    mov si, timeInfo
+    mov bl, 0x3B
+    call printStr
+    
+    mov dh, 15
+    mov dl, 28
+    mov si, difficultyMsg
+    mov bl, 0x3E
+    call printStr
+    
+    mov dh, 16
+    mov dl, 32
+    mov si, easyBtn
+    mov bl, 0x3A
+    call printStr
+    
+    mov dh, 17
+    mov dl, 32
+    mov si, mediumBtn
+    mov bl, 0x3A
+    call printStr
+    
+    mov dh, 18
+    mov dl, 32
+    mov si, hardBtn
+    mov bl, 0x3A
+    call printStr
+    
+    mov dh, 20
+    mov dl, 30
+    mov si, startBtn
+    mov bl, 0x3A
+    call printStr
+    
+    mov dh, 22
+    mov dl, 30
+    mov si, exitBtn
+    mov bl, 0x3C
+    call printStr
+    
+    mov dh, 16
+    mov dl, 30
+    mov al, '>'
+    mov bl, 0x3E
+    call printChar
+    
+startWait:
+    mov ah, 0
+    int 16h
+    
+    cmp al, '1'
+    je setEasy
+    cmp al, '2'
+    je setMedium
+    cmp al, '3'
+    je setHard
+    
+    cmp al, 's'
+    je goToGame
+    cmp al, 'S'
+    je goToGame
+    cmp al, 'e'
+    je exitProgram
+    cmp al, 'E'
+    je exitProgram
+    jmp startWait
+
+
+;=========================================== Levels and shi
+
+setEasy:
+    mov dh, 16
+    mov dl, 30
+    mov al, ' '
+    mov bl, 0x30
+    call printChar
+    
+    mov dh, 17
+    mov dl, 30
+    call printChar
+    
+    mov dh, 18
+    mov dl, 30
+    call printChar
+    
+    mov byte [difficulty], 1
+    mov word [moveSpeed], 20
+    mov word [spawnDelay], 60
+    
+    mov dh, 16
+    mov dl, 30
+    mov al, '>'
+    mov bl, 0x3E
+    call printChar
+    
+    jmp startWait
+
+setMedium:
+    mov dh, 16
+    mov dl, 30
+    mov al, ' '
+    mov bl, 0x30
+    call printChar
+    
+    mov dh, 17
+    mov dl, 30
+    call printChar
+    
+    mov dh, 18
+    mov dl, 30
+    call printChar
+    
+    mov byte [difficulty], 2
+    mov word [moveSpeed], 9
+    mov word [spawnDelay], 45
+    
+    mov dh, 17
+    mov dl, 30
+    mov al, '>'
+    mov bl, 0x3E
+    call printChar
+    
+    jmp startWait
+
+setHard:
+    mov dh, 16
+    mov dl, 30
+    mov al, ' '
+    mov bl, 0x30
+    call printChar
+    
+    mov dh, 17
+    mov dl, 30
+    call printChar
+    
+    mov dh, 18
+    mov dl, 30
+    call printChar
+    
+    mov byte [difficulty], 3
+    mov word [moveSpeed], 4
+    mov word [spawnDelay], 30
+    
+    mov dh, 18
+    mov dl, 30
+    mov al, '>'
+    mov bl, 0x3E
+    call printChar
+    
+    jmp startWait
+
+goToGame:
+    call showGameScreen
+    jmp showEndScreen
+
+showGameScreen:
+    call delayedclr
+    call initBalloons
+    
+    mov word [score], 0
+    mov byte [frameCount], 0
+    mov word [moveCounter], 0
+    mov word [spawnDelay], 50
+    
+    mov ah, 0
+    int 0x1A
+    mov [startTicks], dx
+    mov [startTicksHi], cx
+    mov word [elapsedTicks], 0
+    mov byte [minutes], 2
+    mov byte [seconds], 0
+    call updateTimeStr
+    
+    call drawStars
+    call drawGround
+    call drawTopBoundary    
+    call drawScore
+    call drawTime
+    
+    mov dh, 0
+    mov dl, 58
+    mov si, pauseMsg
+    mov bl, 0x07
+    call printStr
+    
+    mov cx, 0
+
+;=========================================== the real game 
+
+gameLoop:
+    mov ah, 1
+    int 16h
+    jnz gameKeyPressed
+
+    call updateTimer
+    call drawTime
+    
+    mov al, [frameCount]
+    inc al
+    and al, 0x3F
+    mov [frameCount], al
+    
+    call drawStars
+    
+    inc cx
+    cmp cx, [spawnDelay]
+    jb noSpawn
+    call spawnBalloon
+    xor cx, cx
+    
+    cmp word [spawnDelay], 30
+    jbe noSpawn
+    
+    mov ax, [score]
+    test ax, 0x001F
+    jnz noSpawn
+    dec word [spawnDelay]
+noSpawn:
+    
+    inc word [moveCounter]
+    mov ax, [moveCounter]
+    cmp ax, [moveSpeed]
+    jb noUpdate
+    mov word [moveCounter], 0
+    
+    call drawStars
+    call updateBalloons
+    call redrawGround
+    call drawStars
+    call drawScore
+noUpdate:
+    
+    push cx
+    mov cx, 0x8000
+delayLoop:
+    loop delayLoop
+    pop cx
+    
+    jmp gameLoop
+
+gameKeyPressed:
+    mov ah, 0
+    int 16h
+    
+    cmp al, 27
+    je goToPause
+    
+    call checkBalloonPop
+    call drawScore
+    
+    jmp gameLoop
+
+goToPause:
+    call showPauseScreen
+    
+    mov ah, 0
+    int 0x1A
+    sub dx, [elapsedTicks]
+    sbb cx, 0
+    mov [startTicks], dx
+    mov [startTicksHi], cx
+    
+    call ClrScr
+    call drawStars
+    call drawGround
+    call drawScore
+    call drawTime
+    
+    mov dh, 0
+    mov dl, 58
+    mov si, pauseMsg
+    mov bl, 0x07
+    call printStr
+    
+    push cx
+    push di
+    mov di, balloonData
+    mov cx, maxBalloons
+redrawBalloonsLoop:
+    cmp byte [di+4], 0
+    je skipRedraw
+    mov dh, [di]
+    mov dl, [di+1]
+    mov bl, [di+3]
+    mov bh, [di+2]
+    call drawGameBalloon
+skipRedraw:
+    add di, 5
+    loop redrawBalloonsLoop
+    pop di
+    pop cx
+    
+    jmp gameLoop
+
+;================================================= Pause Screen code 
+showPauseScreen:
+    call ClrScr
+    call paintBlue
+    
+    mov dh, 2
+    mov dl, 5
+    mov bl, 0x39
+    call drawBalloon
+    
+    mov dh, 3
+    mov dl, 70
+    mov bl, 0x3D
+    call drawBalloon
+    
+    mov dh, 18
+    mov dl, 8
+    mov bl, 0x3E
+    call drawBalloon
+    
+    mov dh, 17
+    mov dl, 68
+    mov bl, 0x3C
+    call drawBalloon
+    
+    mov ax, [score]
+    call numToStr
+    
+    mov dh, 1
+    mov dl, 34
+    mov si, scoreLabel
+    mov bl, 0x3F
+    call printStr
+    mov si, numBuffer
+    mov dl, 41
+    call printStr
+    
+    mov dh, 8
+    mov dl, 22
+    mov si, pauseBox1
+    mov bl, 0x3E
+    call printStr
+    
+    mov dh, 9
+    mov dl, 22
+    mov si, pauseBox2
+    mov bl, 0x3E
+    call printStr
+    
+    mov dh, 10
+    mov dl, 22
+    mov si, pauseBox3
+    mov bl, 0x3F
+    call printStr
+    
+    mov dh, 11
+    mov dl, 22
+    mov si, pauseBox4
+    mov bl, 0x3E
+    call printStr
+    
+    mov dh, 12
+    mov dl, 22
+    mov si, pauseBox5
+    mov bl, 0x3E
+    call printStr
+    
+    mov dh, 14
+    mov dl, 27
+    mov si, continueMsg
+    mov bl, 0x3B
+    call printStr
+    
+    mov dh, 16
+    mov dl, 30
+    mov si, exitFromPauseMsg
+    mov bl, 0x3C
+    call printStr
+    
+pauseWait:
+    mov ah, 0
+    int 16h
+    
+    cmp al, 'p'
+    je returnFromPause
+    cmp al, 'P'
+    je returnFromPause
+    cmp al, 'e'
+    je exitFromPause
+    cmp al, 'E'
+    je exitFromPause
+    jmp pauseWait
+
+exitFromPause:
+    mov byte [gameOverReason], 2
+    jmp showEndScreen
+	
+
+returnFromPause:
+    ret
+
+showEndScreen:
+    call delayedclr
+    call paintBlue
+    
+    mov dh, 2
+    mov dl, 5
+    mov bl, 0x35
+    call drawBalloon
+    
+    mov dh, 3
+    mov dl, 70
+    mov bl, 0x31
+    call drawBalloon
+    
+    mov dh, 17
+    mov dl, 8
+    mov bl, 0x36
+    call drawBalloon
+    
+    mov dh, 17
+    mov dl, 68
+    mov bl, 0x34
+    call drawBalloon
+    
+    mov dh, 6
+    mov dl, 22
+    mov si, gameOver1
+    mov bl, 0xB4
+    call printStr
+    
+    mov dh, 7
+    mov dl, 22
+    mov si, gameOver2
+    mov bl, 0xB4
+    call printStr
+    
+    mov dh, 8
+    mov dl, 22
+    mov si, gameOver3
+    mov bl, 0xB4
+    call printStr
+    
+    mov dh, 9
+    mov dl, 22
+    mov si, gameOver4
+    mov bl, 0xB4
+    call printStr
+    
+    mov dh, 10
+    mov dl, 22
+    mov si, gameOver5
+    mov bl, 0xB4
+    call printStr
+    
+    mov dh, 12
+    mov dl, 29
+    mov si, thankMsg
+    mov bl, 0xB4
+    call printStr
+    
+    cmp byte [gameOverReason], 0
+    je showTimeUp
+    
+    mov dh, 13
+    mov dl, 30
+    mov si, escapeMsg
+    mov bl, 0x3C
+    call printStr
+    jmp showScore
+    
+showTimeUp:
+    mov dh, 13
+    mov dl, 34
+    mov si, timeUpMsg
+    mov bl, 0x3B
+    call printStr
+    
+showScore:
+    mov dh, 15
+    mov dl, 32
+    mov si, finalScoreMsg
+    mov bl, 0x37
+    call printStr
+    
+    mov ax, [score]
+    call numToStr
+    mov si, numBuffer
+    mov dl, 46
+    call printStr
+    
+    cmp byte [gameOverReason], 2
+    je showQuitMsg
+    jmp showButtons
+    
+showQuitMsg:
+    mov dh, 13
+    mov dl, 33
+    mov si, continueMsg
+    mov bl, 0x3B
+    
+showButtons:
+    mov dh, 18
+    mov dl, 28
+    mov si, restartBtn
+    mov bl, 0x37
+    call printStr
+    
+    mov dh, 20
+    mov dl, 28
+    mov si, exitBtn2
+    mov bl, 0x36
+    call printStr
+    
+endWait:
+
+    mov ah, 0
+    int 16h
+    
+    cmp al, 'r'
+    je goToRestart
+    cmp al, 'R'
+    je goToRestart
+    cmp al, 'e'
+    je exitProgram
+    cmp al, 'E'
+    je exitProgram
+    jmp endWait
+
+goToRestart:
+    jmp start
+
+exitProgram:
+    call delayedclr
+    mov ax, 0x4C00
+    int 21h
+
+
+start:
+    call showStartScreen
+    jmp start
